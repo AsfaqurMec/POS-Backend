@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  pinCode      String?  @default("1234") // 4-digit quick unlock PIN
+  role         String   @default("STAFF") // ADMIN, STAFF
+  status       String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sales          Sale[]
+  stockMovements StockMovement[]
+  shifts         Shift[]
+  cashMovements  CashMovement[]
+  auditLogs      AuditLog[]
+
+  @@index([email])
+  @@index([pinCode])
+}
+
+model Business {
+  id              String   @id @default(uuid())
+  nameEn          String   @default("Aroma Coffee")
+  nameAr          String   @default("مقهى أروما")
+  logoUrl         String?
+  phone           String?
+  addressEn       String?
+  addressAr       String?
+  currency        String   @default("SAR")
+  timezone        String   @default("Asia/Riyadh")
+  taxEnabled      Boolean  @default(false)
+  taxRate         Float    @default(0.0)
+  pricingMode     String   @default("INCLUSIVE") // INCLUSIVE, EXCLUSIVE
+  invoicePrefix   String   @default("INV-")
+  receiptFooterEn String?  @default("Thank you for visiting Aroma Coffee!")
+  receiptFooterAr String?  @default("شكراً لزيارتكم مقهى أروما!")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Category {
+  id            String   @id @default(uuid())
+  businessId    String
+  nameEn        String
+  nameAr        String
+  descriptionEn String?
+  descriptionAr String?
+  imageUrl      String?
+  active        Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items         Item[]
+
+  @@index([businessId])
+  @@index([sortOrder])
+}
+
+model Item {
+  id            String   @id @default(uuid())
+  businessId    String
+  categoryId    String
+  nameEn        String
+  nameAr        String
+  descriptionEn String?
+  descriptionAr String?
+  imageUrl      String?
+  type          String   @default("PRODUCT") // PRODUCT, SERVICE
+  basePrice     Float
+  sku           String?
+  barcode       String?
+  stockEnabled  Boolean  @default(false)
+  stockQuantity Int      @default(0)
+  variationMode String   @default("NONE") // NONE, OPTION, VARIANT
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category        Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  variationGroups VariationGroup[]
+  variants        ProductVariant[]
+  saleItems       SaleItem[]
+  stockMovements  StockMovement[]
+  recipes         RecipeItem[]
+  wasteLogs       WasteLog[]
+
+  @@index([categoryId])
+  @@index([sku])
+  @@index([barcode])
+  @@index([nameEn])
+  @@index([nameAr])
+}
+
+model VariationGroup {
+  id            String   @id @default(uuid())
+  itemId        String
+  nameEn        String
+  nameAr        String
+  required      Boolean  @default(false)
+  selectionType String   @default("SINGLE") // SINGLE, MULTIPLE
+  sortOrder     Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  item                  Item                   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  options               VariationOption[]
+  productVariantOptions ProductVariantOption[]
+
+  @@index([itemId])
+}
+
+model VariationOption {
+  id               String   @id @default(uuid())
+  variationGroupId String
+  nameEn           String
+  nameAr           String
+  priceAdjustment  Float    @default(0.0)
+  active           Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  variationGroup        VariationGroup         @relation(fields: [variationGroupId], references: [id], onDelete: Cascade)
+  productVariantOptions ProductVariantOption[]
+
+  @@index([variationGroupId])
+}
+
+model ProductVariant {
+  id            String   @id @default(uuid())
+  itemId        String
+  sku           String?
+  barcode       String?
+  price         Float
+  stockQuantity Int      @default(0)
+  imageUrl      String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  item           Item                   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  variantOptions ProductVariantOption[]
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  recipes        RecipeItem[]
+
+  @@index([itemId])
+  @@index([sku])
+  @@index([barcode])
+}
+
+model ProductVariantOption {
+  id                String @id @default(uuid())
+  productVariantId  String
+  variationGroupId  String
+  variationOptionId String
+
+  productVariant  ProductVariant  @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  variationGroup  VariationGroup  @relation(fields: [variationGroupId], references: [id], onDelete: Cascade)
+  variationOption VariationOption @relation(fields: [variationOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([productVariantId, variationGroupId])
+  @@index([productVariantId])
+  @@index([variationOptionId])
+}
+
+model Sale {
+  id             String   @id @default(uuid())
+  businessId     String
+  userId         String
+  customerName   String?
+  customerPhone  String?
+  subtotal       Float
+  discountType   String   @default("NONE") // NONE, PERCENTAGE, FIXED
+  discountValue  Float    @default(0.0)
+  discountAmount Float    @default(0.0)
+  taxAmount      Float    @default(0.0)
+  totalAmount    Float
+  paymentMethod  String   @default("CASH") // CASH, CARD, OTHER
+  orderType      String   @default("TAKEAWAY") // DINE_IN, TAKEAWAY
+  shiftId        String?
+  voidReason     String?
+  voidedAt       DateTime?
+  voidedByUserId String?
+  orderNumber    String?
+  status         String   @default("COMPLETED") // PENDING, COMPLETED, CANCELLED, VOIDED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id])
+  shift    Shift?        @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  items    SaleItem[]
+  invoice  Invoice?
+  payments SalePayment[]
+
+  @@index([userId])
+  @@index([shiftId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([orderNumber])
+}
+
+model SaleItem {
+  id                 String   @id @default(uuid())
+  saleId             String
+  itemId             String
+  variantId          String?
+  itemNameEnSnapshot String
+  itemNameArSnapshot String
+  quantity           Int
+  baseUnitPrice      Float
+  variationAmount    Float    @default(0.0)
+  unitPrice          Float
+  discountAmount     Float    @default(0.0)
+  lineTotal          Float
+  createdAt          DateTime @default(now())
+
+  sale    Sale              @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item    Item              @relation(fields: [itemId], references: [id])
+  variant ProductVariant?   @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  options SaleItemOption[]
+
+  @@index([saleId])
+  @@index([itemId])
+  @@index([variantId])
+}
+
+model SaleItemOption {
+  id                   String @id @default(uuid())
+  saleItemId           String
+  variationGroupNameEn String
+  variationGroupNameAr String
+  optionNameEn         String
+  optionNameAr         String
+  priceAdjustment      Float  @default(0.0)
+
+  saleItem SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  @@index([saleItemId])
+}
+
+model Invoice {
+  id                String   @id @default(uuid())
+  businessId        String
+  saleId            String   @unique
+  invoiceNumber     String   @unique
+  issueDate         String
+  issueTime         String
+  cashierName       String?
+  customerName      String?
+  customerPhone     String?
+  orderType         String   @default("TAKEAWAY")
+  businessNameEn    String
+  businessNameAr    String
+  businessAddressEn String?
+  businessAddressAr String?
+  subtotal          Float
+  discount          Float
+  tax               Float    @default(0.0)
+  totalAmount       Float
+  paymentMethod     String
+  status            String   @default("ISSUED") // ISSUED, VOID
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceNumber])
+  @@index([createdAt])
+}
+
+model InvoiceSequence {
+  id            Int      @id @default(autoincrement())
+  prefix        String   @default("INV-")
+  currentNumber Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+model StockMovement {
+  id            String   @id @default(uuid())
+  itemId        String
+  variantId     String?
+  type          String   // RESTOCK, SALE, RETURN, DAMAGE, ADJUSTMENT
+  quantity      Int      // Delta: positive (+) or negative (-)
+  previousStock Int
+  newStock      Int
+  referenceId   String?  // Invoice #, Sale ID, or PO ref
+  reason        String?  // Human note or reason
+  userId        String?  // Admin or Staff who initiated the change
+  createdAt     DateTime @default(now())
+
+  item    Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  user    User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([itemId])
+  @@index([variantId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model Shift {
+  id           String    @id @default(uuid())
+  businessId   String
+  userId       String
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+  startFloat   Float     @default(0.0)
+  expectedCash Float?
+  actualCash   Float?
+  cashVariance Float?
+  notes        String?
+  status       String    @default("OPEN") // OPEN, CLOSED
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id])
+  sales         Sale[]
+  cashMovements CashMovement[]
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([status])
+  @@index([openedAt])
+}
+
+model CashMovement {
+  id        String   @id @default(uuid())
+  shiftId   String
+  userId    String
+  type      String   // PAID_IN, PAID_OUT, CASH_DROP
+  amount    Float
+  reason    String
+  createdAt DateTime @default(now())
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([shiftId])
+  @@index([userId])
+  @@index([type])
+}
+
+model SalePayment {
+  id            String   @id @default(uuid())
+  saleId        String
+  paymentMethod String   // CASH, CARD, MOBILE_PAY, OTHER
+  amount        Float
+  reference     String?
+  createdAt     DateTime @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([paymentMethod])
+}
+
+model HeldOrder {
+  id            String   @id @default(uuid())
+  businessId    String
+  userId        String
+  customerName  String?
+  customerPhone String?
+  tag           String?  // Table #, Pager #, Buzzer #
+  orderType     String   @default("TAKEAWAY")
+  orderNumber   String?
+  cartSnapshot  String   // JSON serialized cart items & discount state
+  itemCount     Int      @default(0)
+  subtotal      Float    @default(0.0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([orderNumber])
+}
+
+model Ingredient {
+  id           String   @id @default(uuid())
+  businessId   String
+  nameEn       String
+  nameAr       String
+  unit         String   // G (Grams), ML (Milliliters), PCS (Pieces)
+  costPerUnit  Float    @default(0.0)
+  currentStock Float    @default(0.0)
+  reorderLevel Float    @default(0.0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  recipes   RecipeItem[]
+  wasteLogs WasteLog[]
+
+  @@index([businessId])
+  @@index([nameEn])
+}
+
+model RecipeItem {
+  id               String   @id @default(uuid())
+  itemId           String
+  variantId        String?
+  ingredientId     String
+  quantityRequired Float    // e.g. 18g beans, 320ml milk
+
+  item       Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  ingredient Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([variantId])
+  @@index([ingredientId])
+}
+
+model WasteLog {
+  id           String   @id @default(uuid())
+  businessId   String
+  ingredientId String?
+  itemId       String?
+  quantity     Float
+  cost         Float    @default(0.0)
+  reason       String   // DIAL_IN, SPOILAGE, SPILLAGE, EXPIRED, DEFECTIVE
+  notes        String?
+  userId       String?
+  createdAt    DateTime @default(now())
+
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  item       Item?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([reason])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String   // DRAWER_POP, MANAGER_OVERRIDE, VOID_ORDER, REFUND, SHIFT_CLOSED
+  details   String?  // JSON or text metadata
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
