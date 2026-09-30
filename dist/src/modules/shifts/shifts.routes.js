@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const shifts_controller_1 = require("./shifts.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.post("/open", (req, res, next) => shifts_controller_1.shiftsController.openShift(req, res, next));
+router.get("/current", (req, res, next) => shifts_controller_1.shiftsController.getCurrentShift(req, res, next));
+router.post("/cash-movement", (req, res, next) => shifts_controller_1.shiftsController.addCashMovement(req, res, next));
+router.post("/close", (req, res, next) => shifts_controller_1.shiftsController.closeShift(req, res, next));
+router.get("/:id/report", (req, res, next) => shifts_controller_1.shiftsController.getShiftReport(req, res, next));
+exports.default = router;

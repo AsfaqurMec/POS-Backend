@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#442d1e"/>
+      <stop offset="100%" stop-color="#1c1917"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="100%" height="100%" rx="24" fill="url(#bg)"/>
+  <circle cx="200" cy="115" r="54" fill="white" fill-opacity="0.12" />
+  <g transform="translate(165, 80) scale(1.4)" filter="url(#shadow)">
+    <path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="6" y1="2" x2="6" y2="4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="10" y2="4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/><line x1="14" y1="2" x2="14" y2="4" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="200" y="210" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="0.5">Americano</text>
+  <text x="200" y="235" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" fill="#ffffff" fill-opacity="0.8">أمريكانو</text>
+</svg>

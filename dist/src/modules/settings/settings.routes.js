@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const settings_controller_1 = require("./settings.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.get("/", (0, auth_1.authorize)(["ADMIN", "GUEST"]), (req, res, next) => settings_controller_1.settingsController.getSettings(req, res, next));
+router.patch("/business", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => settings_controller_1.settingsController.updateBusiness(req, res, next));
+router.patch("/invoice", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => settings_controller_1.settingsController.updateInvoice(req, res, next));
+exports.default = router;

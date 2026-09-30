@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const recipes_controller_1 = require("./recipes.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.get("/ingredients", (req, res, next) => recipes_controller_1.recipesController.listIngredients(req, res, next));
+router.post("/ingredients", (req, res, next) => recipes_controller_1.recipesController.createIngredient(req, res, next));
+router.patch("/ingredients/:id", (req, res, next) => recipes_controller_1.recipesController.updateIngredient(req, res, next));
+router.get("/item/:itemId", (req, res, next) => recipes_controller_1.recipesController.getRecipe(req, res, next));
+router.put("/item/:itemId", (req, res, next) => recipes_controller_1.recipesController.setRecipe(req, res, next));
+router.post("/waste", (req, res, next) => recipes_controller_1.recipesController.logWastage(req, res, next));
+router.get("/waste", (req, res, next) => recipes_controller_1.recipesController.listWasteLogs(req, res, next));
+exports.default = router;

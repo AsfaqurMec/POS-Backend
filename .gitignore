@@ -7,11 +7,9 @@ node_modules/
 .env.*.local
 
 # Build output
-dist/
 build/
 
 # Uploads / user-generated content
-uploads/
 
 # Logs
 logs/
