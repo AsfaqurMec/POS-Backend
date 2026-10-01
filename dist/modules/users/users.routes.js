@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const users_controller_1 = require("./users.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.get("/", (0, auth_1.authorize)(["ADMIN", "GUEST"]), (req, res, next) => users_controller_1.usersController.listUsers(req, res, next));
+router.get("/:id", (0, auth_1.authorize)(["ADMIN", "GUEST"]), (req, res, next) => users_controller_1.usersController.getUser(req, res, next));
+router.post("/", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => users_controller_1.usersController.createUser(req, res, next));
+router.patch("/:id", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => users_controller_1.usersController.updateUser(req, res, next));
+router.patch("/:id/status", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => users_controller_1.usersController.toggleStatus(req, res, next));
+router.patch("/:id/pin", (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => users_controller_1.usersController.updateUserPin(req, res, next));
+exports.default = router;

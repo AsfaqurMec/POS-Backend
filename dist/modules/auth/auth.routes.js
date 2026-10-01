@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_controller_1 = require("./auth.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.post("/login", (req, res, next) => auth_controller_1.authController.login(req, res, next));
+router.post("/guest-login", (req, res, next) => auth_controller_1.authController.guestLogin(req, res, next));
+router.post("/pin-login", (req, res, next) => auth_controller_1.authController.pinLogin(req, res, next));
+router.post("/unlock-terminal", auth_1.optionalAuthenticate, (req, res, next) => auth_controller_1.authController.unlockTerminal(req, res, next));
+router.post("/verify-manager-pin", (req, res, next) => auth_controller_1.authController.verifyManagerPin(req, res, next));
+router.patch("/pin", auth_1.authenticate, (req, res, next) => auth_controller_1.authController.updatePin(req, res, next));
+router.post("/logout", (req, res) => auth_controller_1.authController.logout(req, res));
+router.get("/me", auth_1.authenticate, (req, res, next) => auth_controller_1.authController.getMe(req, res, next));
+router.patch("/password", auth_1.authenticate, (req, res, next) => auth_controller_1.authController.changePassword(req, res, next));
+exports.default = router;

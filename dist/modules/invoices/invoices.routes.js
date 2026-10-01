@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const invoices_controller_1 = require("./invoices.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.get("/", (req, res, next) => invoices_controller_1.invoicesController.listInvoices(req, res, next));
+router.get("/:id", (req, res, next) => invoices_controller_1.invoicesController.getInvoice(req, res, next));
+exports.default = router;

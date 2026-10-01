@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const categories_controller_1 = require("./categories.controller");
+const auth_1 = require("../../middleware/auth");
+const upload_1 = require("../../middleware/upload");
+const router = (0, express_1.Router)();
+const upload = (0, upload_1.createUploader)("categories");
+router.get("/", (req, res, next) => categories_controller_1.categoriesController.listCategories(req, res, next));
+router.get("/:id", (req, res, next) => categories_controller_1.categoriesController.getCategory(req, res, next));
+router.post("/", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), upload.single("image"), (req, res, next) => categories_controller_1.categoriesController.createCategory(req, res, next));
+router.patch("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), upload.single("image"), (req, res, next) => categories_controller_1.categoriesController.updateCategory(req, res, next));
+router.patch("/:id/status", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => categories_controller_1.categoriesController.toggleStatus(req, res, next));
+router.delete("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => categories_controller_1.categoriesController.deleteCategory(req, res, next));
+exports.default = router;

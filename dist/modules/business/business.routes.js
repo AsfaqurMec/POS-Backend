@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const business_controller_1 = require("./business.controller");
+const auth_1 = require("../../middleware/auth");
+const upload_1 = require("../../middleware/upload");
+const router = (0, express_1.Router)();
+const upload = (0, upload_1.createUploader)("businesses");
+router.get("/", (req, res, next) => business_controller_1.businessController.getBusiness(req, res, next));
+router.patch("/", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), upload.single("logo"), (req, res, next) => business_controller_1.businessController.updateBusiness(req, res, next));
+exports.default = router;

@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const sales_controller_1 = require("./sales.controller");
+const auth_1 = require("../../middleware/auth");
+const router = (0, express_1.Router)();
+router.use(auth_1.authenticate);
+router.post("/", (req, res, next) => sales_controller_1.salesController.createSale(req, res, next));
+router.get("/", (req, res, next) => sales_controller_1.salesController.listSales(req, res, next));
+router.post("/hold", (req, res, next) => sales_controller_1.salesController.holdOrder(req, res, next));
+router.get("/held", (req, res, next) => sales_controller_1.salesController.getHeldOrders(req, res, next));
+router.delete("/held/:id", (req, res, next) => sales_controller_1.salesController.deleteHeldOrder(req, res, next));
+router.post("/:id/void", (req, res, next) => sales_controller_1.salesController.voidSale(req, res, next));
+router.get("/:id", (req, res, next) => sales_controller_1.salesController.getSale(req, res, next));
+exports.default = router;

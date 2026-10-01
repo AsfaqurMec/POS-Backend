@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const items_controller_1 = require("./items.controller");
+const auth_1 = require("../../middleware/auth");
+const upload_1 = require("../../middleware/upload");
+const router = (0, express_1.Router)();
+const upload = (0, upload_1.createUploader)("products");
+router.get("/", (req, res, next) => items_controller_1.itemsController.listItems(req, res, next));
+router.get("/:id/stats", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN", "GUEST"]), (req, res, next) => items_controller_1.itemsController.getItemStats(req, res, next));
+router.get("/:id", (req, res, next) => items_controller_1.itemsController.getItem(req, res, next));
+router.post("/", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), upload.single("image"), (req, res, next) => items_controller_1.itemsController.createItem(req, res, next));
+router.patch("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), upload.single("image"), (req, res, next) => items_controller_1.itemsController.updateItem(req, res, next));
+router.patch("/:id/status", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => items_controller_1.itemsController.toggleStatus(req, res, next));
+router.delete("/:id", auth_1.authenticate, (0, auth_1.authorize)(["ADMIN"]), (req, res, next) => items_controller_1.itemsController.deleteItem(req, res, next));
+exports.default = router;
