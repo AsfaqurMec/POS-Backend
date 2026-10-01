@@ -72,33 +72,64 @@ class AuthService {
         });
         return { success: true };
     }
+    async checkPinMatch(inputPin, storedPin, userIdToUpgrade) {
+        if (!storedPin)
+            return false;
+        // Check plaintext match
+        if (storedPin === inputPin) {
+            // Auto-upgrade legacy plaintext PIN to bcrypt in the background
+            if (userIdToUpgrade) {
+                bcryptjs_1.default.hash(inputPin, 10).then((hashed) => {
+                    prisma_1.prisma.user.update({ where: { id: userIdToUpgrade }, data: { pinCode: hashed } }).catch(() => null);
+                });
+            }
+            return true;
+        }
+        // Check bcrypt hash match
+        if (storedPin.startsWith("$2a$") || storedPin.startsWith("$2b$") || storedPin.startsWith("$2y$")) {
+            try {
+                return await bcryptjs_1.default.compare(inputPin, storedPin);
+            }
+            catch {
+                return false;
+            }
+        }
+        return false;
+    }
     async pinLogin(pinCode) {
         if (!pinCode || pinCode.trim().length === 0) {
             throw new response_1.AppError("INVALID_PIN", "PIN code is required", 400);
         }
         const cleanPin = pinCode.trim();
-        const user = await prisma_1.prisma.user.findFirst({
+        const activeUsers = await prisma_1.prisma.user.findMany({
             where: {
-                pinCode: cleanPin,
                 status: "ACTIVE",
+                pinCode: { not: null },
             },
         });
-        if (!user) {
+        let matchedUser = null;
+        for (const u of activeUsers) {
+            if (await this.checkPinMatch(cleanPin, u.pinCode, u.id)) {
+                matchedUser = u;
+                break;
+            }
+        }
+        if (!matchedUser) {
             throw new response_1.AppError("INVALID_PIN", "Invalid PIN code entered", 401);
         }
         const token = (0, jwt_1.signToken)({
-            userId: user.id,
-            email: user.email,
-            role: user.role,
+            userId: matchedUser.id,
+            email: matchedUser.email,
+            role: matchedUser.role,
         });
         return {
             token,
             user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                status: user.status,
+                id: matchedUser.id,
+                name: matchedUser.name,
+                email: matchedUser.email,
+                role: matchedUser.role,
+                status: matchedUser.status,
             },
         };
     }
@@ -107,22 +138,36 @@ class AuthService {
             throw new response_1.AppError("INVALID_PIN", "Manager PIN is required", 400);
         }
         const cleanPin = pinCode.trim();
-        const manager = await prisma_1.prisma.user.findFirst({
+        const managers = await prisma_1.prisma.user.findMany({
             where: {
-                pinCode: cleanPin,
                 role: "ADMIN",
                 status: "ACTIVE",
+                pinCode: { not: null },
             },
         });
-        if (!manager) {
+        let matchedManager = null;
+        for (const m of managers) {
+            if (await this.checkPinMatch(cleanPin, m.pinCode, m.id)) {
+                matchedManager = m;
+                break;
+            }
+        }
+        if (!matchedManager) {
             throw new response_1.AppError("UNAUTHORIZED_MANAGER_PIN", "Invalid Manager PIN or insufficient privileges", 403);
         }
+        const managerToken = (0, jwt_1.signManagerToken)({
+            managerId: matchedManager.id,
+            managerName: matchedManager.name,
+            role: "ADMIN",
+            action: "MANAGER_OVERRIDE",
+        });
         return {
             valid: true,
+            managerToken,
             manager: {
-                id: manager.id,
-                name: manager.name,
-                email: manager.email,
+                id: matchedManager.id,
+                name: matchedManager.name,
+                email: matchedManager.email,
             },
         };
     }
@@ -130,9 +175,10 @@ class AuthService {
         if (!pinCode || pinCode.trim().length < 4) {
             throw new response_1.AppError("INVALID_PIN", "PIN must be at least 4 digits", 400);
         }
+        const hashedPin = await bcryptjs_1.default.hash(pinCode.trim(), 10);
         await prisma_1.prisma.user.update({
             where: { id: userId },
-            data: { pinCode: pinCode.trim() },
+            data: { pinCode: hashedPin },
         });
         return { success: true };
     }
@@ -146,30 +192,37 @@ class AuthService {
             const currentUser = await prisma_1.prisma.user.findUnique({
                 where: { id: currentUserId },
             });
-            if (currentUser && currentUser.status === "ACTIVE" && currentUser.pinCode === cleanPin) {
-                return { unlocked: true, unlockedBy: "SELF", userName: currentUser.name };
+            if (currentUser && currentUser.status === "ACTIVE") {
+                const matches = await this.checkPinMatch(cleanPin, currentUser.pinCode, currentUser.id);
+                if (matches) {
+                    return { unlocked: true, unlockedBy: "SELF", userName: currentUser.name };
+                }
             }
         }
-        // 2. Alternatively check if an ADMIN / Manager is unlocking the terminal
-        const adminUser = await prisma_1.prisma.user.findFirst({
+        // 2. Check if an active ADMIN / Manager is unlocking the terminal
+        const activeAdmins = await prisma_1.prisma.user.findMany({
             where: {
-                pinCode: cleanPin,
                 role: "ADMIN",
                 status: "ACTIVE",
+                pinCode: { not: null },
             },
         });
-        if (adminUser) {
-            return { unlocked: true, unlockedBy: "MANAGER", userName: adminUser.name };
+        for (const adminUser of activeAdmins) {
+            if (await this.checkPinMatch(cleanPin, adminUser.pinCode, adminUser.id)) {
+                return { unlocked: true, unlockedBy: "MANAGER", userName: adminUser.name };
+            }
         }
         // 3. Fallback: check if ANY active staff user has this PIN
-        const anyUser = await prisma_1.prisma.user.findFirst({
+        const activeStaff = await prisma_1.prisma.user.findMany({
             where: {
-                pinCode: cleanPin,
                 status: "ACTIVE",
+                pinCode: { not: null },
             },
         });
-        if (anyUser) {
-            return { unlocked: true, unlockedBy: "STAFF", userName: anyUser.name };
+        for (const staffUser of activeStaff) {
+            if (await this.checkPinMatch(cleanPin, staffUser.pinCode, staffUser.id)) {
+                return { unlocked: true, unlockedBy: "STAFF", userName: staffUser.name };
+            }
         }
         throw new response_1.AppError("INVALID_PIN", "Incorrect PIN. Enter your staff PIN or Manager PIN to unlock.", 401);
     }

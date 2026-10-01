@@ -45,12 +45,14 @@ export class SalesController {
   async voidSale(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const { voidReason, restock } = req.body;
+      const { voidReason, restock, managerToken: bodyToken } = req.body;
+      const managerToken = (req.headers["x-manager-token"] as string) || bodyToken;
       const result = await salesService.voidSale(
-        req.user!.userId,
+        req.user!,
         id,
         voidReason,
-        restock !== false
+        restock !== false,
+        managerToken
       );
       return sendSuccess(res, result, 200, "Sale voided and refunded successfully");
     } catch (err) {

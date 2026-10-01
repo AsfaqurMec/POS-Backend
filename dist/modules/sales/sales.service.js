@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.salesService = exports.SalesService = void 0;
 const prisma_1 = require("../../config/prisma");
 const response_1 = require("../../utils/response");
+const jwt_1 = require("../../utils/jwt");
 const business_service_1 = require("../business/business.service");
 const kds_service_1 = require("../kds/kds.service");
 class SalesService {
@@ -447,9 +448,33 @@ class SalesService {
         const business = await business_service_1.businessService.getBusiness();
         return { sale, business };
     }
-    async voidSale(userId, saleId, voidReason, restock = true) {
+    async voidSale(user, saleId, voidReason, restock = true, managerToken) {
         if (!voidReason || !voidReason.trim()) {
             throw new response_1.AppError("REASON_REQUIRED", "Void reason is mandatory", 400);
+        }
+        // Manager authorization check:
+        // If the caller is not an ADMIN, a valid, short-lived managerToken signed by the server is required.
+        let authorizedByManagerId = null;
+        let authorizedByManagerName = null;
+        if (user.role !== "ADMIN") {
+            if (!managerToken) {
+                throw new response_1.AppError("MANAGER_AUTHORIZATION_REQUIRED", "Manager authorization is required to void sales. Please authenticate with Manager PIN.", 403);
+            }
+            try {
+                const decoded = (0, jwt_1.verifyManagerToken)(managerToken);
+                if (decoded.role !== "ADMIN" || decoded.action !== "MANAGER_OVERRIDE") {
+                    throw new response_1.AppError("INVALID_MANAGER_TOKEN", "Invalid manager authorization token", 403);
+                }
+                authorizedByManagerId = decoded.managerId;
+                authorizedByManagerName = decoded.managerName;
+            }
+            catch (err) {
+                throw new response_1.AppError("INVALID_MANAGER_TOKEN", "Manager authorization expired or invalid", 403);
+            }
+        }
+        else {
+            authorizedByManagerId = user.userId;
+            authorizedByManagerName = "Admin Self-Authorization";
         }
         const sale = await prisma_1.prisma.sale.findUnique({
             where: { id: saleId },
@@ -477,7 +502,7 @@ class SalesService {
                     status: "VOIDED",
                     voidReason: voidReason.trim(),
                     voidedAt: new Date(),
-                    voidedByUserId: userId,
+                    voidedByUserId: user.userId,
                 },
             });
             // 2. Update Invoice status
@@ -506,7 +531,7 @@ class SalesService {
                                     newStock: updatedVar.stockQuantity,
                                     referenceId: sale.invoice?.invoiceNumber || sale.id,
                                     reason: `Void refund: ${voidReason}`,
-                                    userId,
+                                    userId: user.userId,
                                 },
                             });
                         }
@@ -525,7 +550,7 @@ class SalesService {
                                     newStock: updatedItem.stockQuantity,
                                     referenceId: sale.invoice?.invoiceNumber || sale.id,
                                     reason: `Void refund: ${voidReason}`,
-                                    userId,
+                                    userId: user.userId,
                                 },
                             });
                         }
@@ -544,13 +569,15 @@ class SalesService {
             // 4. Log Audit
             await tx.auditLog.create({
                 data: {
-                    userId,
+                    userId: user.userId,
                     action: "VOID_ORDER",
                     details: JSON.stringify({
                         saleId,
                         invoiceNumber: sale.invoice?.invoiceNumber,
                         totalAmount: sale.totalAmount,
                         reason: voidReason,
+                        authorizedByManagerId,
+                        authorizedByManagerName,
                         restocked: restock,
                     }),
                 },

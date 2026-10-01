@@ -34,7 +34,7 @@ class UsersService {
                 email: u.email,
                 role: u.role,
                 status: u.status,
-                pinCode: u.pinCode,
+                hasPin: Boolean(u.pinCode),
                 createdAt: u.createdAt,
                 totalSales,
                 totalRevenue,
@@ -50,6 +50,7 @@ class UsersService {
                 email: true,
                 role: true,
                 status: true,
+                pinCode: true,
                 createdAt: true,
                 updatedAt: true,
                 sales: {
@@ -110,6 +111,7 @@ class UsersService {
             email: user.email,
             role: user.role,
             status: user.status,
+            hasPin: Boolean(user.pinCode),
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
             stats: {
@@ -169,10 +171,10 @@ class UsersService {
                 if (!/^\d{4,6}$/.test(cleanPin)) {
                     throw new response_1.AppError("INVALID_PIN", "PIN code must be between 4 and 6 numeric digits", 400);
                 }
-                pinCode = cleanPin;
+                pinCode = await bcryptjs_1.default.hash(cleanPin, 10);
             }
         }
-        return prisma_1.prisma.user.update({
+        const updated = await prisma_1.prisma.user.update({
             where: { id },
             data: {
                 name: data.name ?? user.name,
@@ -188,10 +190,13 @@ class UsersService {
                 email: true,
                 role: true,
                 status: true,
-                pinCode: true,
                 createdAt: true,
             },
         });
+        return {
+            ...updated,
+            hasPin: Boolean(pinCode),
+        };
     }
     async updateUserPin(id, pinCode) {
         const user = await prisma_1.prisma.user.findUnique({ where: { id } });
@@ -204,9 +209,9 @@ class UsersService {
             if (!/^\d{4,6}$/.test(cleanPin)) {
                 throw new response_1.AppError("INVALID_PIN", "PIN code must be between 4 and 6 numeric digits", 400);
             }
-            finalPin = cleanPin;
+            finalPin = await bcryptjs_1.default.hash(cleanPin, 10);
         }
-        return prisma_1.prisma.user.update({
+        const updated = await prisma_1.prisma.user.update({
             where: { id },
             data: { pinCode: finalPin },
             select: {
@@ -214,9 +219,12 @@ class UsersService {
                 name: true,
                 email: true,
                 role: true,
-                pinCode: true,
             },
         });
+        return {
+            ...updated,
+            hasPin: Boolean(finalPin),
+        };
     }
     async toggleStatus(id, status) {
         const user = await prisma_1.prisma.user.findUnique({ where: { id } });

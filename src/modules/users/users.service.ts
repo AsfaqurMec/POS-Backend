@@ -30,7 +30,7 @@ export class UsersService {
         email: u.email,
         role: u.role,
         status: u.status,
-        pinCode: u.pinCode,
+        hasPin: Boolean(u.pinCode),
         createdAt: u.createdAt,
         totalSales,
         totalRevenue,
@@ -47,6 +47,7 @@ export class UsersService {
         email: true,
         role: true,
         status: true,
+        pinCode: true,
         createdAt: true,
         updatedAt: true,
         sales: {
@@ -118,6 +119,7 @@ export class UsersService {
       email: user.email,
       role: user.role,
       status: user.status,
+      hasPin: Boolean(user.pinCode),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       stats: {
@@ -181,11 +183,11 @@ export class UsersService {
         if (!/^\d{4,6}$/.test(cleanPin)) {
           throw new AppError("INVALID_PIN", "PIN code must be between 4 and 6 numeric digits", 400);
         }
-        pinCode = cleanPin;
+        pinCode = await bcrypt.hash(cleanPin, 10);
       }
     }
 
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: {
         name: data.name ?? user.name,
@@ -201,10 +203,14 @@ export class UsersService {
         email: true,
         role: true,
         status: true,
-        pinCode: true,
         createdAt: true,
       },
     });
+
+    return {
+      ...updated,
+      hasPin: Boolean(pinCode),
+    };
   }
 
   async updateUserPin(id: string, pinCode: string | null) {
@@ -219,10 +225,10 @@ export class UsersService {
       if (!/^\d{4,6}$/.test(cleanPin)) {
         throw new AppError("INVALID_PIN", "PIN code must be between 4 and 6 numeric digits", 400);
       }
-      finalPin = cleanPin;
+      finalPin = await bcrypt.hash(cleanPin, 10);
     }
 
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: { pinCode: finalPin },
       select: {
@@ -230,9 +236,13 @@ export class UsersService {
         name: true,
         email: true,
         role: true,
-        pinCode: true,
       },
     });
+
+    return {
+      ...updated,
+      hasPin: Boolean(finalPin),
+    };
   }
 
   async toggleStatus(id: string, status?: string) {

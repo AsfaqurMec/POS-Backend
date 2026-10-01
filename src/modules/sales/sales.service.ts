@@ -1,5 +1,6 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/response";
+import { verifyManagerToken } from "../../utils/jwt";
 import { businessService } from "../business/business.service";
 import { kdsBroadcaster } from "../kds/kds.service";
 
@@ -545,9 +546,43 @@ export class SalesService {
     return { sale, business };
   }
 
-  async voidSale(userId: string, saleId: string, voidReason: string, restock: boolean = true) {
+  async voidSale(
+    user: { userId: string; role: string },
+    saleId: string,
+    voidReason: string,
+    restock: boolean = true,
+    managerToken?: string
+  ) {
     if (!voidReason || !voidReason.trim()) {
       throw new AppError("REASON_REQUIRED", "Void reason is mandatory", 400);
+    }
+
+    // Manager authorization check:
+    // If the caller is not an ADMIN, a valid, short-lived managerToken signed by the server is required.
+    let authorizedByManagerId: string | null = null;
+    let authorizedByManagerName: string | null = null;
+
+    if (user.role !== "ADMIN") {
+      if (!managerToken) {
+        throw new AppError(
+          "MANAGER_AUTHORIZATION_REQUIRED",
+          "Manager authorization is required to void sales. Please authenticate with Manager PIN.",
+          403
+        );
+      }
+      try {
+        const decoded = verifyManagerToken(managerToken);
+        if (decoded.role !== "ADMIN" || decoded.action !== "MANAGER_OVERRIDE") {
+          throw new AppError("INVALID_MANAGER_TOKEN", "Invalid manager authorization token", 403);
+        }
+        authorizedByManagerId = decoded.managerId;
+        authorizedByManagerName = decoded.managerName;
+      } catch (err: any) {
+        throw new AppError("INVALID_MANAGER_TOKEN", "Manager authorization expired or invalid", 403);
+      }
+    } else {
+      authorizedByManagerId = user.userId;
+      authorizedByManagerName = "Admin Self-Authorization";
     }
 
     const sale = await prisma.sale.findUnique({
@@ -579,7 +614,7 @@ export class SalesService {
           status: "VOIDED",
           voidReason: voidReason.trim(),
           voidedAt: new Date(),
-          voidedByUserId: userId,
+          voidedByUserId: user.userId,
         },
       });
 
@@ -611,7 +646,7 @@ export class SalesService {
                   newStock: updatedVar.stockQuantity,
                   referenceId: sale.invoice?.invoiceNumber || sale.id,
                   reason: `Void refund: ${voidReason}`,
-                  userId,
+                  userId: user.userId,
                 },
               });
             } else {
@@ -630,7 +665,7 @@ export class SalesService {
                   newStock: updatedItem.stockQuantity,
                   referenceId: sale.invoice?.invoiceNumber || sale.id,
                   reason: `Void refund: ${voidReason}`,
-                  userId,
+                  userId: user.userId,
                 },
               });
             }
@@ -651,13 +686,15 @@ export class SalesService {
       // 4. Log Audit
       await tx.auditLog.create({
         data: {
-          userId,
+          userId: user.userId,
           action: "VOID_ORDER",
           details: JSON.stringify({
             saleId,
             invoiceNumber: sale.invoice?.invoiceNumber,
             totalAmount: sale.totalAmount,
             reason: voidReason,
+            authorizedByManagerId,
+            authorizedByManagerName,
             restocked: restock,
           }),
         },
