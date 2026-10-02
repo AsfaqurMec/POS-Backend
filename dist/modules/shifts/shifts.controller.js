@@ -53,6 +53,34 @@ class ShiftsController {
             next(err);
         }
     }
+    async getAllShifts(req, res, next) {
+        try {
+            const { page, limit, status, startDate, endDate, userId, search } = req.query;
+            const result = await shifts_service_1.shiftsService.getAllShifts({
+                page: page ? Number(page) : undefined,
+                limit: limit ? Number(limit) : undefined,
+                status: status,
+                startDate: startDate,
+                endDate: endDate,
+                userId: userId,
+                search: search,
+            });
+            return (0, response_1.sendSuccess)(res, result);
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async getShiftById(req, res, next) {
+        try {
+            const { id } = req.params;
+            const result = await shifts_service_1.shiftsService.getShiftById(id);
+            return (0, response_1.sendSuccess)(res, result);
+        }
+        catch (err) {
+            next(err);
+        }
+    }
 }
 exports.ShiftsController = ShiftsController;
 exports.shiftsController = new ShiftsController();

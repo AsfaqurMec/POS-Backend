@@ -307,6 +307,263 @@ export class ShiftsService {
       cashMovements: shift.cashMovements,
     };
   }
+
+  async getAllShifts(query: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    userId?: string;
+    search?: string;
+  }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (query.status && (query.status === "OPEN" || query.status === "CLOSED")) {
+      where.status = query.status;
+    }
+
+    if (query.userId) {
+      where.userId = query.userId;
+    }
+
+    if (query.startDate || query.endDate) {
+      where.openedAt = {};
+      if (query.startDate) where.openedAt.gte = new Date(query.startDate);
+      if (query.endDate) where.openedAt.lte = new Date(query.endDate);
+    }
+
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      where.OR = [
+        { id: { contains: term } },
+        { user: { name: { contains: term } } },
+        { user: { email: { contains: term } } },
+      ];
+    }
+
+    const [total, shifts, allMatchingShifts] = await Promise.all([
+      prisma.shift.count({ where }),
+      prisma.shift.findMany({
+        where,
+        orderBy: { openedAt: "desc" },
+        skip,
+        take: limit,
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+          _count: {
+            select: {
+              sales: true,
+              cashMovements: true,
+            },
+          },
+          sales: {
+            select: {
+              totalAmount: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      prisma.shift.findMany({
+        where,
+        select: {
+          status: true,
+          actualCash: true,
+          expectedCash: true,
+          cashVariance: true,
+          sales: {
+            where: { status: { in: ["COMPLETED", "PREPARING", "READY", "SERVED"] } },
+            select: { totalAmount: true },
+          },
+        },
+      }),
+    ]);
+
+    let totalRevenue = 0;
+    let totalVariance = 0;
+    let openCount = 0;
+    let closedCount = 0;
+
+    for (const s of allMatchingShifts) {
+      if (s.status === "OPEN") openCount++;
+      else closedCount++;
+
+      if (s.cashVariance != null) {
+        totalVariance += s.cashVariance;
+      }
+      for (const sale of s.sales) {
+        totalRevenue += sale.totalAmount;
+      }
+    }
+
+    const formattedShifts = shifts.map((s) => {
+      let shiftSalesTotal = 0;
+      for (const sale of s.sales) {
+        if (["COMPLETED", "PREPARING", "READY", "SERVED"].includes(sale.status)) {
+          shiftSalesTotal += sale.totalAmount;
+        }
+      }
+
+      return {
+        id: s.id,
+        businessId: s.businessId,
+        userId: s.userId,
+        openedAt: s.openedAt,
+        closedAt: s.closedAt,
+        startFloat: s.startFloat,
+        expectedCash: s.expectedCash,
+        actualCash: s.actualCash,
+        cashVariance: s.cashVariance,
+        notes: s.notes,
+        status: s.status,
+        user: s.user,
+        totalSales: shiftSalesTotal,
+        totalOrders: s._count.sales,
+        cashMovementsCount: s._count.cashMovements,
+      };
+    });
+
+    return {
+      shifts: formattedShifts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        totalShifts: total,
+        openShifts: openCount,
+        closedShifts: closedCount,
+        totalRevenue,
+        totalVariance,
+      },
+    };
+  }
+
+  async getShiftById(shiftId: string) {
+    const shift = await prisma.shift.findUnique({
+      where: { id: shiftId },
+      include: {
+        user: { select: { id: true, name: true, email: true, role: true } },
+        cashMovements: {
+          include: { user: { select: { id: true, name: true } } },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    if (!shift) {
+      throw new AppError("SHIFT_NOT_FOUND", "Shift not found", 404);
+    }
+
+    const business = await businessService.getBusiness();
+
+    const sales = await prisma.sale.findMany({
+      where: { shiftId: shift.id },
+      include: {
+        invoice: { select: { id: true, invoiceNumber: true, createdAt: true } },
+        user: { select: { id: true, name: true } },
+        items: {
+          select: {
+            id: true,
+            itemNameEnSnapshot: true,
+            itemNameArSnapshot: true,
+            quantity: true,
+            unitPrice: true,
+            lineTotal: true,
+          },
+        },
+        payments: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let cashSales = 0;
+    let cardSales = 0;
+    let otherSales = 0;
+    let subtotal = 0;
+    let totalDiscounts = 0;
+    let totalTax = 0;
+    let totalRevenue = 0;
+
+    for (const sale of sales) {
+      if (["COMPLETED", "PREPARING", "READY", "SERVED"].includes(sale.status)) {
+        subtotal += sale.subtotal;
+        totalDiscounts += sale.discountAmount;
+        totalTax += sale.taxAmount;
+        totalRevenue += sale.totalAmount;
+
+        if (sale.paymentMethod === "CASH") cashSales += sale.totalAmount;
+        else if (sale.paymentMethod === "CARD") cardSales += sale.totalAmount;
+        else otherSales += sale.totalAmount;
+      }
+    }
+
+    let paidIns = 0;
+    let paidOuts = 0;
+    for (const cm of shift.cashMovements) {
+      if (cm.type === "PAID_IN") paidIns += cm.amount;
+      else paidOuts += cm.amount;
+    }
+
+    const expectedCash = shift.startFloat + cashSales + paidIns - paidOuts;
+    const actualCash = shift.actualCash ?? (shift.status === "CLOSED" ? expectedCash : null);
+    const cashVariance = shift.cashVariance ?? (actualCash != null ? actualCash - expectedCash : 0);
+
+    const validSales = sales.filter((s) => ["COMPLETED", "PREPARING", "READY", "SERVED"].includes(s.status));
+    const firstInvoice = validSales[validSales.length - 1]?.invoice?.invoiceNumber || "N/A";
+    const lastInvoice = validSales[0]?.invoice?.invoiceNumber || "N/A";
+
+    return {
+      business,
+      shift: {
+        id: shift.id,
+        businessId: shift.businessId,
+        userId: shift.userId,
+        status: shift.status,
+        openedAt: shift.openedAt,
+        closedAt: shift.closedAt,
+        startFloat: shift.startFloat,
+        expectedCash: shift.expectedCash ?? expectedCash,
+        actualCash: shift.actualCash,
+        cashVariance: shift.cashVariance,
+        notes: shift.notes,
+        user: shift.user,
+      },
+      summary: {
+        totalOrders: validSales.length,
+        totalAllOrders: sales.length,
+        firstInvoice,
+        lastInvoice,
+        subtotal,
+        totalDiscounts,
+        totalTax,
+        totalRevenue,
+        tenders: {
+          cash: cashSales,
+          card: cardSales,
+          other: otherSales,
+        },
+        cashReconciliation: {
+          startFloat: shift.startFloat,
+          cashSales,
+          paidIns,
+          paidOuts,
+          expectedInDrawer: expectedCash,
+          actualCounted: actualCash ?? expectedCash,
+          overShort: cashVariance,
+        },
+      },
+      cashMovements: shift.cashMovements,
+      sales,
+    };
+  }
 }
 
 export const shiftsService = new ShiftsService();

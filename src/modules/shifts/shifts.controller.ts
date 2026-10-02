@@ -63,6 +63,34 @@ export class ShiftsController {
       next(err);
     }
   }
+
+  async getAllShifts(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { page, limit, status, startDate, endDate, userId, search } = req.query;
+      const result = await shiftsService.getAllShifts({
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+        status: status as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
+        userId: userId as string,
+        search: search as string,
+      });
+      return sendSuccess(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getShiftById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const result = await shiftsService.getShiftById(id);
+      return sendSuccess(res, result);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const shiftsController = new ShiftsController();
