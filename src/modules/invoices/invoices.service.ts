@@ -27,9 +27,14 @@ export class InvoicesService {
   }
 
   async getInvoice(id: string) {
+    const trimmed = id ? id.trim() : "";
     const invoice = await prisma.invoice.findFirst({
       where: {
-        OR: [{ id }, { invoiceNumber: id }, { saleId: id }],
+        OR: [
+          { id: trimmed },
+          { invoiceNumber: { equals: trimmed, mode: "insensitive" } },
+          { saleId: trimmed },
+        ],
       },
       include: {
         sale: {

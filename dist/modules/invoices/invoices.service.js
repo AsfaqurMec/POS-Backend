@@ -26,9 +26,14 @@ class InvoicesService {
         return { invoices, total, page, limit: take };
     }
     async getInvoice(id) {
+        const trimmed = id ? id.trim() : "";
         const invoice = await prisma_1.prisma.invoice.findFirst({
             where: {
-                OR: [{ id }, { invoiceNumber: id }, { saleId: id }],
+                OR: [
+                    { id: trimmed },
+                    { invoiceNumber: { equals: trimmed, mode: "insensitive" } },
+                    { saleId: trimmed },
+                ],
             },
             include: {
                 sale: {

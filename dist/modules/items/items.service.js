@@ -24,6 +24,8 @@ class ItemsService {
                 { nameAr: { contains: q, mode: "insensitive" } },
                 { sku: { contains: q, mode: "insensitive" } },
                 { barcode: { contains: q, mode: "insensitive" } },
+                { variants: { some: { barcode: { contains: q, mode: "insensitive" } } } },
+                { variants: { some: { sku: { contains: q, mode: "insensitive" } } } },
             ];
         }
         return prisma_1.prisma.item.findMany({
