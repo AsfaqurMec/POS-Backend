@@ -3,31 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.inventoryService = exports.InventoryService = void 0;
 const prisma_1 = require("../../config/prisma");
 const response_1 = require("../../utils/response");
+const cache_1 = require("../../utils/cache");
+const CACHE_PREFIX_INVENTORY = "inventory:";
 class InventoryService {
     async getInventory(search) {
-        const items = await prisma_1.prisma.item.findMany({
-            where: {
-                stockEnabled: true,
-                ...(search
-                    ? {
-                        OR: [
-                            { nameEn: { contains: search, mode: "insensitive" } },
-                            { nameAr: { contains: search, mode: "insensitive" } },
-                            { sku: { contains: search, mode: "insensitive" } },
-                            { barcode: { contains: search, mode: "insensitive" } },
-                        ],
-                    }
-                    : {}),
-            },
-            include: {
-                category: { select: { id: true, nameEn: true, nameAr: true } },
-            },
-            orderBy: { nameEn: "asc" },
-        });
-        const variants = await prisma_1.prisma.productVariant.findMany({
-            where: {
-                item: {
-                    variationMode: "VARIANT",
+        const cacheKey = `${CACHE_PREFIX_INVENTORY}${search || "all"}`;
+        return cache_1.appCache.getOrSet(cacheKey, 1000 * 30, async () => {
+            const items = await prisma_1.prisma.item.findMany({
+                where: {
+                    stockEnabled: true,
                     ...(search
                         ? {
                             OR: [
@@ -39,64 +23,85 @@ class InventoryService {
                         }
                         : {}),
                 },
-            },
-            include: {
-                item: { select: { id: true, nameEn: true, nameAr: true, category: true, imageUrl: true } },
-                variantOptions: {
-                    include: { variationGroup: true, variationOption: true },
+                include: {
+                    category: { select: { id: true, nameEn: true, nameAr: true } },
                 },
-            },
-            orderBy: { createdAt: "asc" },
+                orderBy: { nameEn: "asc" },
+            });
+            const variants = await prisma_1.prisma.productVariant.findMany({
+                where: {
+                    item: {
+                        variationMode: "VARIANT",
+                        ...(search
+                            ? {
+                                OR: [
+                                    { nameEn: { contains: search, mode: "insensitive" } },
+                                    { nameAr: { contains: search, mode: "insensitive" } },
+                                    { sku: { contains: search, mode: "insensitive" } },
+                                    { barcode: { contains: search, mode: "insensitive" } },
+                                ],
+                            }
+                            : {}),
+                    },
+                },
+                include: {
+                    item: { select: { id: true, nameEn: true, nameAr: true, category: true, imageUrl: true } },
+                    variantOptions: {
+                        include: { variationGroup: true, variationOption: true },
+                    },
+                },
+                orderBy: { createdAt: "asc" },
+            });
+            // Formatted list for real inventory dashboard
+            const inventoryList = [
+                ...items
+                    .filter((i) => i.variationMode !== "VARIANT")
+                    .map((i) => ({
+                    id: i.id,
+                    type: "ITEM",
+                    itemId: i.id,
+                    nameEn: i.nameEn,
+                    nameAr: i.nameAr,
+                    categoryId: i.categoryId,
+                    categoryEn: i.category?.nameEn || "-",
+                    categoryAr: i.category?.nameAr || "-",
+                    imageUrl: i.imageUrl,
+                    basePrice: i.basePrice,
+                    sku: i.sku || "-",
+                    barcode: i.barcode || "-",
+                    stockQuantity: i.stockQuantity,
+                    status: i.stockQuantity === 0 ? "OUT_OF_STOCK" : i.stockQuantity <= 5 ? "LOW" : "IN_STOCK",
+                    valuation: i.stockQuantity * i.basePrice,
+                    active: i.active,
+                })),
+                ...variants.map((v) => {
+                    const comboEn = v.variantOptions.map((vo) => vo.variationOption.nameEn).join(" / ");
+                    const comboAr = v.variantOptions.map((vo) => vo.variationOption.nameAr).join(" / ");
+                    return {
+                        id: v.id,
+                        type: "VARIANT",
+                        itemId: v.itemId,
+                        nameEn: `${v.item.nameEn} (${comboEn})`,
+                        nameAr: `${v.item.nameAr} (${comboAr})`,
+                        categoryId: v.item.category?.id || "-",
+                        categoryEn: v.item.category?.nameEn || "-",
+                        categoryAr: v.item.category?.nameAr || "-",
+                        imageUrl: v.imageUrl || v.item.imageUrl,
+                        basePrice: v.price,
+                        sku: v.sku || "-",
+                        barcode: v.barcode || "-",
+                        stockQuantity: v.stockQuantity,
+                        status: v.stockQuantity === 0 ? "OUT_OF_STOCK" : v.stockQuantity <= 5 ? "LOW" : "IN_STOCK",
+                        valuation: v.stockQuantity * v.price,
+                        active: v.active,
+                    };
+                }),
+            ];
+            return inventoryList;
         });
-        // Formatted list for real inventory dashboard
-        const inventoryList = [
-            ...items
-                .filter((i) => i.variationMode !== "VARIANT")
-                .map((i) => ({
-                id: i.id,
-                type: "ITEM",
-                itemId: i.id,
-                nameEn: i.nameEn,
-                nameAr: i.nameAr,
-                categoryId: i.categoryId,
-                categoryEn: i.category?.nameEn || "-",
-                categoryAr: i.category?.nameAr || "-",
-                imageUrl: i.imageUrl,
-                basePrice: i.basePrice,
-                sku: i.sku || "-",
-                barcode: i.barcode || "-",
-                stockQuantity: i.stockQuantity,
-                status: i.stockQuantity === 0 ? "OUT_OF_STOCK" : i.stockQuantity <= 5 ? "LOW" : "IN_STOCK",
-                valuation: i.stockQuantity * i.basePrice,
-                active: i.active,
-            })),
-            ...variants.map((v) => {
-                const comboEn = v.variantOptions.map((vo) => vo.variationOption.nameEn).join(" / ");
-                const comboAr = v.variantOptions.map((vo) => vo.variationOption.nameAr).join(" / ");
-                return {
-                    id: v.id,
-                    type: "VARIANT",
-                    itemId: v.itemId,
-                    nameEn: `${v.item.nameEn} (${comboEn})`,
-                    nameAr: `${v.item.nameAr} (${comboAr})`,
-                    categoryId: v.item.category?.id || "-",
-                    categoryEn: v.item.category?.nameEn || "-",
-                    categoryAr: v.item.category?.nameAr || "-",
-                    imageUrl: v.imageUrl || v.item.imageUrl,
-                    basePrice: v.price,
-                    sku: v.sku || "-",
-                    barcode: v.barcode || "-",
-                    stockQuantity: v.stockQuantity,
-                    status: v.stockQuantity === 0 ? "OUT_OF_STOCK" : v.stockQuantity <= 5 ? "LOW" : "IN_STOCK",
-                    valuation: v.stockQuantity * v.price,
-                    active: v.active,
-                };
-            }),
-        ];
-        return inventoryList;
     }
     async updateStock(id, type, newQuantity, delta, movementType, reason, userId) {
-        return prisma_1.prisma.$transaction(async (tx) => {
+        const result = await prisma_1.prisma.$transaction(async (tx) => {
             let previousStock = 0;
             let targetQuantity;
             let calculatedDelta = 0;
@@ -186,6 +191,9 @@ class InventoryService {
                 return updated;
             }
         });
+        cache_1.appCache.invalidatePrefix("items:");
+        cache_1.appCache.invalidatePrefix(CACHE_PREFIX_INVENTORY);
+        return result;
     }
 }
 exports.InventoryService = InventoryService;

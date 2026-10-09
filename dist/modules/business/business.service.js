@@ -3,20 +3,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.businessService = exports.BusinessService = void 0;
 const prisma_1 = require("../../config/prisma");
 const upload_1 = require("../../middleware/upload");
+const cache_1 = require("../../utils/cache");
+const CACHE_KEY_BUSINESS = "business:profile";
+const CACHE_TTL_BUSINESS = 1000 * 60 * 10; // 10 minutes
 class BusinessService {
     async getBusiness() {
-        let business = await prisma_1.prisma.business.findFirst();
-        if (!business) {
-            business = await prisma_1.prisma.business.create({
-                data: {
-                    nameEn: "Aroma Coffee",
-                    nameAr: "مقهى أروما",
-                    currency: "SAR",
-                    timezone: "Asia/Riyadh",
-                },
-            });
-        }
-        return business;
+        return cache_1.appCache.getOrSet(CACHE_KEY_BUSINESS, CACHE_TTL_BUSINESS, async () => {
+            let business = await prisma_1.prisma.business.findFirst();
+            if (!business) {
+                business = await prisma_1.prisma.business.create({
+                    data: {
+                        nameEn: "Aroma Coffee",
+                        nameAr: "مقهى أروما",
+                        currency: "SAR",
+                        timezone: "Asia/Riyadh",
+                    },
+                });
+            }
+            return business;
+        });
     }
     async updateBusiness(data, newLogoFile) {
         const current = await this.getBusiness();
@@ -47,6 +52,7 @@ class BusinessService {
                 logoUrl,
             },
         });
+        cache_1.appCache.del(CACHE_KEY_BUSINESS);
         return updated;
     }
 }

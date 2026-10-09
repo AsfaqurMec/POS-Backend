@@ -1,21 +1,27 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/response";
 import { deleteUploadedFile } from "../../middleware/upload";
+import { appCache } from "../../utils/cache";
+
+const CACHE_KEY_BUSINESS = "business:profile";
+const CACHE_TTL_BUSINESS = 1000 * 60 * 10; // 10 minutes
 
 export class BusinessService {
   async getBusiness() {
-    let business = await prisma.business.findFirst();
-    if (!business) {
-      business = await prisma.business.create({
-        data: {
-          nameEn: "Aroma Coffee",
-          nameAr: "مقهى أروما",
-          currency: "SAR",
-          timezone: "Asia/Riyadh",
-        },
-      });
-    }
-    return business;
+    return appCache.getOrSet(CACHE_KEY_BUSINESS, CACHE_TTL_BUSINESS, async () => {
+      let business = await prisma.business.findFirst();
+      if (!business) {
+        business = await prisma.business.create({
+          data: {
+            nameEn: "Aroma Coffee",
+            nameAr: "مقهى أروما",
+            currency: "SAR",
+            timezone: "Asia/Riyadh",
+          },
+        });
+      }
+      return business;
+    });
   }
 
   async updateBusiness(data: any, newLogoFile?: Express.Multer.File) {
@@ -50,6 +56,7 @@ export class BusinessService {
       },
     });
 
+    appCache.del(CACHE_KEY_BUSINESS);
     return updated;
   }
 }

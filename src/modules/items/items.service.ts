@@ -2,6 +2,11 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/response";
 import { deleteUploadedFile } from "../../middleware/upload";
 import { businessService } from "../business/business.service";
+import { appCache } from "../../utils/cache";
+
+export const CACHE_PREFIX_ITEMS = "items:";
+const CACHE_TTL_ITEMS_DEFAULT = 1000 * 60 * 5; // 5 minutes for category/catalog views
+const CACHE_TTL_ITEMS_SEARCH = 1000 * 30; // 30 seconds for dynamic search
 
 export interface ItemFilters {
   categoryId?: string;
@@ -12,7 +17,11 @@ export interface ItemFilters {
 
 export class ItemsService {
   async listItems(filters: ItemFilters = {}) {
-    const where: any = {};
+    const cacheKey = `${CACHE_PREFIX_ITEMS}${filters.categoryId || "all"}:${filters.search || ""}:${filters.activeOnly !== false}:${filters.variationMode || "all"}`;
+    const ttl = filters.search ? CACHE_TTL_ITEMS_SEARCH : CACHE_TTL_ITEMS_DEFAULT;
+
+    return appCache.getOrSet(cacheKey, ttl, async () => {
+      const where: any = {};
 
     if (filters.activeOnly !== false) {
       where.active = true;
@@ -67,6 +76,7 @@ export class ItemsService {
         },
       },
       orderBy: { createdAt: "desc" },
+    });
     });
   }
 
@@ -209,7 +219,7 @@ export class ItemsService {
     const stockEnabled = data.stockEnabled === true || data.stockEnabled === "true";
     const stockQuantity = data.stockQuantity ? parseInt(data.stockQuantity, 10) : 0;
 
-    return prisma.item.create({
+    const created = await prisma.item.create({
       data: {
         businessId: business.id,
         categoryId: data.categoryId,
@@ -233,6 +243,9 @@ export class ItemsService {
         variants: true,
       },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_ITEMS);
+    return created;
   }
 
   async updateItem(id: string, data: any, file?: Express.Multer.File) {
@@ -263,7 +276,7 @@ export class ItemsService {
       }
     }
 
-    return prisma.item.update({
+    const updated = await prisma.item.update({
       where: { id },
       data: {
         categoryId: data.categoryId ?? current.categoryId,
@@ -289,6 +302,9 @@ export class ItemsService {
         variants: true,
       },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_ITEMS);
+    return updated;
   }
 
   async toggleStatus(id: string, active?: boolean) {
@@ -298,10 +314,13 @@ export class ItemsService {
     }
 
     const newActive = active !== undefined ? active : !current.active;
-    return prisma.item.update({
+    const updated = await prisma.item.update({
       where: { id },
       data: { active: newActive },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_ITEMS);
+    return updated;
   }
 
   async deleteItem(id: string) {
@@ -315,6 +334,7 @@ export class ItemsService {
     }
 
     await prisma.item.delete({ where: { id } });
+    appCache.invalidatePrefix(CACHE_PREFIX_ITEMS);
     return { success: true };
   }
 }

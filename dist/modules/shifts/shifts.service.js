@@ -302,7 +302,7 @@ class ShiftsService {
                 { user: { email: { contains: term } } },
             ];
         }
-        const [total, shifts, allMatchingShifts] = await Promise.all([
+        const [total, shifts, varianceAgg, revenueAgg, openCount] = await Promise.all([
             prisma_1.prisma.shift.count({ where }),
             prisma_1.prisma.shift.findMany({
                 where,
@@ -318,6 +318,7 @@ class ShiftsService {
                         },
                     },
                     sales: {
+                        where: { status: { in: ["COMPLETED", "PREPARING", "READY", "SERVED"] } },
                         select: {
                             totalAmount: true,
                             status: true,
@@ -325,36 +326,24 @@ class ShiftsService {
                     },
                 },
             }),
-            prisma_1.prisma.shift.findMany({
+            prisma_1.prisma.shift.aggregate({
                 where,
-                select: {
-                    status: true,
-                    actualCash: true,
-                    expectedCash: true,
-                    cashVariance: true,
-                    sales: {
-                        where: { status: { in: ["COMPLETED", "PREPARING", "READY", "SERVED"] } },
-                        select: { totalAmount: true },
-                    },
+                _sum: { cashVariance: true },
+            }),
+            prisma_1.prisma.sale.aggregate({
+                where: {
+                    shift: where,
+                    status: { in: ["COMPLETED", "PREPARING", "READY", "SERVED"] },
                 },
+                _sum: { totalAmount: true },
+            }),
+            prisma_1.prisma.shift.count({
+                where: { ...where, status: "OPEN" },
             }),
         ]);
-        let totalRevenue = 0;
-        let totalVariance = 0;
-        let openCount = 0;
-        let closedCount = 0;
-        for (const s of allMatchingShifts) {
-            if (s.status === "OPEN")
-                openCount++;
-            else
-                closedCount++;
-            if (s.cashVariance != null) {
-                totalVariance += s.cashVariance;
-            }
-            for (const sale of s.sales) {
-                totalRevenue += sale.totalAmount;
-            }
-        }
+        const totalRevenue = revenueAgg._sum.totalAmount || 0;
+        const totalVariance = varianceAgg._sum.cashVariance || 0;
+        const closedCount = Math.max(0, total - openCount);
         const formattedShifts = shifts.map((s) => {
             let shiftSalesTotal = 0;
             for (const sale of s.sales) {

@@ -2,17 +2,24 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/response";
 import { deleteUploadedFile } from "../../middleware/upload";
 import { businessService } from "../business/business.service";
+import { appCache } from "../../utils/cache";
+
+const CACHE_PREFIX_CATEGORIES = "categories:";
+const CACHE_TTL_CATEGORIES = 1000 * 60 * 10; // 10 minutes
 
 export class CategoriesService {
   async listCategories(includeInactive = false) {
-    return prisma.category.findMany({
-      where: includeInactive ? {} : { active: true },
-      include: {
-        _count: {
-          select: { items: true },
+    const cacheKey = `${CACHE_PREFIX_CATEGORIES}list:${includeInactive}`;
+    return appCache.getOrSet(cacheKey, CACHE_TTL_CATEGORIES, async () => {
+      return prisma.category.findMany({
+        where: includeInactive ? {} : { active: true },
+        include: {
+          _count: {
+            select: { items: true },
+          },
         },
-      },
-      orderBy: { sortOrder: "asc" },
+        orderBy: { sortOrder: "asc" },
+      });
     });
   }
 
@@ -45,7 +52,7 @@ export class CategoriesService {
       imageUrl = `/uploads/categories/${file.filename}`;
     }
 
-    return prisma.category.create({
+    const created = await prisma.category.create({
       data: {
         businessId: business.id,
         nameEn: data.nameEn,
@@ -57,6 +64,9 @@ export class CategoriesService {
         active: data.active !== undefined ? Boolean(data.active === true || data.active === "true") : true,
       },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+    return created;
   }
 
   async updateCategory(id: string, data: any, file?: Express.Multer.File) {
@@ -79,7 +89,7 @@ export class CategoriesService {
       imageUrl = null;
     }
 
-    return prisma.category.update({
+    const updated = await prisma.category.update({
       where: { id },
       data: {
         nameEn: data.nameEn ?? current.nameEn,
@@ -91,6 +101,9 @@ export class CategoriesService {
         imageUrl,
       },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+    return updated;
   }
 
   async toggleStatus(id: string, active?: boolean) {
@@ -100,10 +113,13 @@ export class CategoriesService {
     }
 
     const newActive = active !== undefined ? active : !current.active;
-    return prisma.category.update({
+    const updated = await prisma.category.update({
       where: { id },
       data: { active: newActive },
     });
+
+    appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+    return updated;
   }
 
   async deleteCategory(id: string) {
@@ -124,6 +140,7 @@ export class CategoriesService {
     }
 
     await prisma.category.delete({ where: { id } });
+    appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
     return { success: true };
   }
 }

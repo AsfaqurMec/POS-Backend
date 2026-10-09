@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../config/prisma";
 import { signToken, signManagerToken } from "../../utils/jwt";
 import { AppError } from "../../utils/response";
+import { appCache } from "../../utils/cache";
 
 export class AuthService {
   async login(email: string, passwordPlain: string) {
@@ -41,23 +42,25 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        status: true,
-        createdAt: true,
-      },
+    return appCache.getOrSet(`auth:me:${userId}`, 1000 * 60, async () => {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+
+      if (!user) {
+        throw new AppError("USER_NOT_FOUND", "User not found", 404);
+      }
+
+      return user;
     });
-
-    if (!user) {
-      throw new AppError("USER_NOT_FOUND", "User not found", 404);
-    }
-
-    return user;
   }
 
   async changePassword(userId: string, currentPlain: string, newPlain: string) {

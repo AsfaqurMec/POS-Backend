@@ -5,16 +5,22 @@ const prisma_1 = require("../../config/prisma");
 const response_1 = require("../../utils/response");
 const upload_1 = require("../../middleware/upload");
 const business_service_1 = require("../business/business.service");
+const cache_1 = require("../../utils/cache");
+const CACHE_PREFIX_CATEGORIES = "categories:";
+const CACHE_TTL_CATEGORIES = 1000 * 60 * 10; // 10 minutes
 class CategoriesService {
     async listCategories(includeInactive = false) {
-        return prisma_1.prisma.category.findMany({
-            where: includeInactive ? {} : { active: true },
-            include: {
-                _count: {
-                    select: { items: true },
+        const cacheKey = `${CACHE_PREFIX_CATEGORIES}list:${includeInactive}`;
+        return cache_1.appCache.getOrSet(cacheKey, CACHE_TTL_CATEGORIES, async () => {
+            return prisma_1.prisma.category.findMany({
+                where: includeInactive ? {} : { active: true },
+                include: {
+                    _count: {
+                        select: { items: true },
+                    },
                 },
-            },
-            orderBy: { sortOrder: "asc" },
+                orderBy: { sortOrder: "asc" },
+            });
         });
     }
     async getCategory(id) {
@@ -44,7 +50,7 @@ class CategoriesService {
         if (file) {
             imageUrl = `/uploads/categories/${file.filename}`;
         }
-        return prisma_1.prisma.category.create({
+        const created = await prisma_1.prisma.category.create({
             data: {
                 businessId: business.id,
                 nameEn: data.nameEn,
@@ -56,6 +62,8 @@ class CategoriesService {
                 active: data.active !== undefined ? Boolean(data.active === true || data.active === "true") : true,
             },
         });
+        cache_1.appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+        return created;
     }
     async updateCategory(id, data, file) {
         const current = await prisma_1.prisma.category.findUnique({ where: { id } });
@@ -76,7 +84,7 @@ class CategoriesService {
             }
             imageUrl = null;
         }
-        return prisma_1.prisma.category.update({
+        const updated = await prisma_1.prisma.category.update({
             where: { id },
             data: {
                 nameEn: data.nameEn ?? current.nameEn,
@@ -88,6 +96,8 @@ class CategoriesService {
                 imageUrl,
             },
         });
+        cache_1.appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+        return updated;
     }
     async toggleStatus(id, active) {
         const current = await prisma_1.prisma.category.findUnique({ where: { id } });
@@ -95,10 +105,12 @@ class CategoriesService {
             throw new response_1.AppError("CATEGORY_NOT_FOUND", "Category not found", 404);
         }
         const newActive = active !== undefined ? active : !current.active;
-        return prisma_1.prisma.category.update({
+        const updated = await prisma_1.prisma.category.update({
             where: { id },
             data: { active: newActive },
         });
+        cache_1.appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
+        return updated;
     }
     async deleteCategory(id) {
         const current = await prisma_1.prisma.category.findUnique({
@@ -115,6 +127,7 @@ class CategoriesService {
             (0, upload_1.deleteUploadedFile)(current.imageUrl);
         }
         await prisma_1.prisma.category.delete({ where: { id } });
+        cache_1.appCache.invalidatePrefix(CACHE_PREFIX_CATEGORIES);
         return { success: true };
     }
 }

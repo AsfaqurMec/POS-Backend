@@ -1,62 +1,70 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.itemsService = exports.ItemsService = void 0;
+exports.itemsService = exports.ItemsService = exports.CACHE_PREFIX_ITEMS = void 0;
 const prisma_1 = require("../../config/prisma");
 const response_1 = require("../../utils/response");
 const upload_1 = require("../../middleware/upload");
 const business_service_1 = require("../business/business.service");
+const cache_1 = require("../../utils/cache");
+exports.CACHE_PREFIX_ITEMS = "items:";
+const CACHE_TTL_ITEMS_DEFAULT = 1000 * 60 * 5; // 5 minutes for category/catalog views
+const CACHE_TTL_ITEMS_SEARCH = 1000 * 30; // 30 seconds for dynamic search
 class ItemsService {
     async listItems(filters = {}) {
-        const where = {};
-        if (filters.activeOnly !== false) {
-            where.active = true;
-        }
-        if (filters.categoryId && filters.categoryId !== "all") {
-            where.categoryId = filters.categoryId;
-        }
-        if (filters.variationMode) {
-            where.variationMode = filters.variationMode;
-        }
-        if (filters.search && filters.search.trim()) {
-            const q = filters.search.trim();
-            where.OR = [
-                { nameEn: { contains: q, mode: "insensitive" } },
-                { nameAr: { contains: q, mode: "insensitive" } },
-                { sku: { contains: q, mode: "insensitive" } },
-                { barcode: { contains: q, mode: "insensitive" } },
-                { variants: { some: { barcode: { contains: q, mode: "insensitive" } } } },
-                { variants: { some: { sku: { contains: q, mode: "insensitive" } } } },
-            ];
-        }
-        return prisma_1.prisma.item.findMany({
-            where,
-            include: {
-                category: {
-                    select: { id: true, nameEn: true, nameAr: true },
-                },
-                variationGroups: {
-                    where: { active: true },
-                    orderBy: { sortOrder: "asc" },
-                    include: {
-                        options: {
-                            where: { active: true },
-                            orderBy: { sortOrder: "asc" },
+        const cacheKey = `${exports.CACHE_PREFIX_ITEMS}${filters.categoryId || "all"}:${filters.search || ""}:${filters.activeOnly !== false}:${filters.variationMode || "all"}`;
+        const ttl = filters.search ? CACHE_TTL_ITEMS_SEARCH : CACHE_TTL_ITEMS_DEFAULT;
+        return cache_1.appCache.getOrSet(cacheKey, ttl, async () => {
+            const where = {};
+            if (filters.activeOnly !== false) {
+                where.active = true;
+            }
+            if (filters.categoryId && filters.categoryId !== "all") {
+                where.categoryId = filters.categoryId;
+            }
+            if (filters.variationMode) {
+                where.variationMode = filters.variationMode;
+            }
+            if (filters.search && filters.search.trim()) {
+                const q = filters.search.trim();
+                where.OR = [
+                    { nameEn: { contains: q, mode: "insensitive" } },
+                    { nameAr: { contains: q, mode: "insensitive" } },
+                    { sku: { contains: q, mode: "insensitive" } },
+                    { barcode: { contains: q, mode: "insensitive" } },
+                    { variants: { some: { barcode: { contains: q, mode: "insensitive" } } } },
+                    { variants: { some: { sku: { contains: q, mode: "insensitive" } } } },
+                ];
+            }
+            return prisma_1.prisma.item.findMany({
+                where,
+                include: {
+                    category: {
+                        select: { id: true, nameEn: true, nameAr: true },
+                    },
+                    variationGroups: {
+                        where: { active: true },
+                        orderBy: { sortOrder: "asc" },
+                        include: {
+                            options: {
+                                where: { active: true },
+                                orderBy: { sortOrder: "asc" },
+                            },
                         },
                     },
-                },
-                variants: {
-                    where: { active: true },
-                    include: {
-                        variantOptions: {
-                            include: {
-                                variationGroup: true,
-                                variationOption: true,
+                    variants: {
+                        where: { active: true },
+                        include: {
+                            variantOptions: {
+                                include: {
+                                    variationGroup: true,
+                                    variationOption: true,
+                                },
                             },
                         },
                     },
                 },
-            },
-            orderBy: { createdAt: "desc" },
+                orderBy: { createdAt: "desc" },
+            });
         });
     }
     async getItem(id) {
@@ -186,7 +194,7 @@ class ItemsService {
         const variationMode = data.variationMode || "NONE";
         const stockEnabled = data.stockEnabled === true || data.stockEnabled === "true";
         const stockQuantity = data.stockQuantity ? parseInt(data.stockQuantity, 10) : 0;
-        return prisma_1.prisma.item.create({
+        const created = await prisma_1.prisma.item.create({
             data: {
                 businessId: business.id,
                 categoryId: data.categoryId,
@@ -210,6 +218,8 @@ class ItemsService {
                 variants: true,
             },
         });
+        cache_1.appCache.invalidatePrefix(exports.CACHE_PREFIX_ITEMS);
+        return created;
     }
     async updateItem(id, data, file) {
         const current = await prisma_1.prisma.item.findUnique({ where: { id } });
@@ -237,7 +247,7 @@ class ItemsService {
                 basePrice = parsed;
             }
         }
-        return prisma_1.prisma.item.update({
+        const updated = await prisma_1.prisma.item.update({
             where: { id },
             data: {
                 categoryId: data.categoryId ?? current.categoryId,
@@ -263,6 +273,8 @@ class ItemsService {
                 variants: true,
             },
         });
+        cache_1.appCache.invalidatePrefix(exports.CACHE_PREFIX_ITEMS);
+        return updated;
     }
     async toggleStatus(id, active) {
         const current = await prisma_1.prisma.item.findUnique({ where: { id } });
@@ -270,10 +282,12 @@ class ItemsService {
             throw new response_1.AppError("ITEM_NOT_FOUND", "Item not found", 404);
         }
         const newActive = active !== undefined ? active : !current.active;
-        return prisma_1.prisma.item.update({
+        const updated = await prisma_1.prisma.item.update({
             where: { id },
             data: { active: newActive },
         });
+        cache_1.appCache.invalidatePrefix(exports.CACHE_PREFIX_ITEMS);
+        return updated;
     }
     async deleteItem(id) {
         const current = await prisma_1.prisma.item.findUnique({ where: { id } });
@@ -284,6 +298,7 @@ class ItemsService {
             (0, upload_1.deleteUploadedFile)(current.imageUrl);
         }
         await prisma_1.prisma.item.delete({ where: { id } });
+        cache_1.appCache.invalidatePrefix(exports.CACHE_PREFIX_ITEMS);
         return { success: true };
     }
 }

@@ -3,6 +3,7 @@ import { AppError } from "../../utils/response";
 import { verifyManagerToken } from "../../utils/jwt";
 import { businessService } from "../business/business.service";
 import { kdsBroadcaster } from "../kds/kds.service";
+import { appCache } from "../../utils/cache";
 
 export interface CreateSaleItemDto {
   itemId: string;
@@ -41,30 +42,33 @@ export class SalesService {
     const preparedItems: any[] = [];
     let subtotal = 0;
 
-    for (const itemDto of data.items) {
-      const quantity = Math.max(1, Math.floor(itemDto.quantity || 1));
-
-      const item = await prisma.item.findUnique({
-        where: { id: itemDto.itemId },
-        include: {
-          recipes: true,
-          variationGroups: {
-            where: { active: true },
-            include: {
-              options: { where: { active: true } },
-            },
+    const itemIds = [...new Set(data.items.map((i) => i.itemId))];
+    const itemsFromDb = await prisma.item.findMany({
+      where: { id: { in: itemIds } },
+      include: {
+        recipes: true,
+        variationGroups: {
+          where: { active: true },
+          include: {
+            options: { where: { active: true } },
           },
-          variants: {
-            where: { active: true },
-            include: {
-              recipes: true,
-              variantOptions: {
-                include: { variationGroup: true, variationOption: true },
-              },
+        },
+        variants: {
+          where: { active: true },
+          include: {
+            recipes: true,
+            variantOptions: {
+              include: { variationGroup: true, variationOption: true },
             },
           },
         },
-      });
+      },
+    });
+    const itemsMap = new Map(itemsFromDb.map((it) => [it.id, it]));
+
+    for (const itemDto of data.items) {
+      const quantity = Math.max(1, Math.floor(itemDto.quantity || 1));
+      const item = itemsMap.get(itemDto.itemId);
 
       if (!item || !item.active) {
         throw new AppError("ITEM_NOT_FOUND", `Item ${itemDto.itemId} is inactive or not found`, 404);
@@ -434,6 +438,8 @@ export class SalesService {
       createdAt: result.sale.createdAt,
     });
 
+    appCache.invalidatePrefix("dashboard:");
+    appCache.invalidatePrefix("items:");
     return result;
   }
 
@@ -700,6 +706,8 @@ export class SalesService {
         },
       });
 
+      appCache.invalidatePrefix("dashboard:");
+      appCache.invalidatePrefix("items:");
       return updatedSale;
     });
   }

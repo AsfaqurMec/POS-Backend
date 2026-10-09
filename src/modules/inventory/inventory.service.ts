@@ -1,11 +1,16 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/response";
+import { appCache } from "../../utils/cache";
+
+const CACHE_PREFIX_INVENTORY = "inventory:";
 
 export class InventoryService {
   async getInventory(search?: string) {
-    const items = await prisma.item.findMany({
-      where: {
-        stockEnabled: true,
+    const cacheKey = `${CACHE_PREFIX_INVENTORY}${search || "all"}`;
+    return appCache.getOrSet(cacheKey, 1000 * 30, async () => {
+      const items = await prisma.item.findMany({
+        where: {
+          stockEnabled: true,
         ...(search
           ? {
               OR: [
@@ -95,6 +100,7 @@ export class InventoryService {
     ];
 
     return inventoryList;
+    });
   }
 
   async updateStock(
@@ -106,7 +112,7 @@ export class InventoryService {
     reason?: string,
     userId?: string
   ) {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       let previousStock = 0;
       let targetQuantity: number;
       let calculatedDelta = 0;
@@ -199,6 +205,10 @@ export class InventoryService {
         return updated;
       }
     });
+
+    appCache.invalidatePrefix("items:");
+    appCache.invalidatePrefix(CACHE_PREFIX_INVENTORY);
+    return result;
   }
 }
 

@@ -5,11 +5,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const compression_1 = __importDefault(require("compression"));
 const path_1 = __importDefault(require("path"));
 const env_1 = require("./config/env");
 const routes_1 = __importDefault(require("./routes"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
+app.disable("x-powered-by");
+// Compression middleware: compress all responses (gzip/deflate)
+app.use((0, compression_1.default)({
+    filter: (req, res) => {
+        if (req.headers["x-no-compression"]) {
+            return false;
+        }
+        return compression_1.default.filter(req, res);
+    },
+    level: 6,
+}));
 // Middleware
 const allowedOrigins = env_1.ENV.CORS_ORIGIN === "*"
     ? "*"
@@ -20,10 +32,14 @@ app.use((0, cors_1.default)({
     origin: allowedOrigins,
     credentials: true,
 }));
-app.use(express_1.default.json());
-app.use(express_1.default.urlencoded({ extended: true }));
-// Serve static uploads
-app.use("/uploads", express_1.default.static(path_1.default.resolve(process.cwd(), env_1.ENV.UPLOAD_DIR)));
+app.use(express_1.default.json({ limit: "10mb" }));
+app.use(express_1.default.urlencoded({ extended: true, limit: "10mb" }));
+// Serve static uploads with aggressive caching (7 days, etag, immutable)
+app.use("/uploads", express_1.default.static(path_1.default.resolve(process.cwd(), env_1.ENV.UPLOAD_DIR), {
+    maxAge: "7d",
+    etag: true,
+    immutable: true,
+}));
 // Mount API routes
 app.use("/api", routes_1.default);
 // Health check

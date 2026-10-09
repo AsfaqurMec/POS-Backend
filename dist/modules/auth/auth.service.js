@@ -8,6 +8,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const prisma_1 = require("../../config/prisma");
 const jwt_1 = require("../../utils/jwt");
 const response_1 = require("../../utils/response");
+const cache_1 = require("../../utils/cache");
 class AuthService {
     async login(email, passwordPlain) {
         const user = await prisma_1.prisma.user.findUnique({
@@ -40,21 +41,23 @@ class AuthService {
         };
     }
     async getMe(userId) {
-        const user = await prisma_1.prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                role: true,
-                status: true,
-                createdAt: true,
-            },
+        return cache_1.appCache.getOrSet(`auth:me:${userId}`, 1000 * 60, async () => {
+            const user = await prisma_1.prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    role: true,
+                    status: true,
+                    createdAt: true,
+                },
+            });
+            if (!user) {
+                throw new response_1.AppError("USER_NOT_FOUND", "User not found", 404);
+            }
+            return user;
         });
-        if (!user) {
-            throw new response_1.AppError("USER_NOT_FOUND", "User not found", 404);
-        }
-        return user;
     }
     async changePassword(userId, currentPlain, newPlain) {
         const user = await prisma_1.prisma.user.findUnique({ where: { id: userId } });

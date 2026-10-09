@@ -1,4 +1,5 @@
 import { prisma } from "../../config/prisma";
+import { appCache } from "../../utils/cache";
 
 export interface DashboardFilter {
   period?: "today" | "yesterday" | "7days" | "30days" | "this_month" | "last_month" | "this_year" | "custom";
@@ -9,7 +10,10 @@ export interface DashboardFilter {
 export class DashboardService {
   async getDashboardStats(filter: DashboardFilter = {}) {
     const period = filter.period || "7days";
-    const now = new Date();
+    const cacheKey = `dashboard:stats:${period}:${filter.startDate || ""}:${filter.endDate || ""}`;
+
+    return appCache.getOrSet(cacheKey, 1000 * 20, async () => {
+      const now = new Date();
 
     let startDate: Date;
     let endDate: Date = new Date();
@@ -511,6 +515,7 @@ export class DashboardService {
         stockMovements: recentStockMovements,
       },
     };
+    });
   }
 }
 

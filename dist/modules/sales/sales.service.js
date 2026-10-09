@@ -6,6 +6,7 @@ const response_1 = require("../../utils/response");
 const jwt_1 = require("../../utils/jwt");
 const business_service_1 = require("../business/business.service");
 const kds_service_1 = require("../kds/kds.service");
+const cache_1 = require("../../utils/cache");
 class SalesService {
     async createSale(userId, data) {
         if (!data.items || data.items.length === 0) {
@@ -15,29 +16,32 @@ class SalesService {
         // 1. Process and validate all items
         const preparedItems = [];
         let subtotal = 0;
-        for (const itemDto of data.items) {
-            const quantity = Math.max(1, Math.floor(itemDto.quantity || 1));
-            const item = await prisma_1.prisma.item.findUnique({
-                where: { id: itemDto.itemId },
-                include: {
-                    recipes: true,
-                    variationGroups: {
-                        where: { active: true },
-                        include: {
-                            options: { where: { active: true } },
-                        },
+        const itemIds = [...new Set(data.items.map((i) => i.itemId))];
+        const itemsFromDb = await prisma_1.prisma.item.findMany({
+            where: { id: { in: itemIds } },
+            include: {
+                recipes: true,
+                variationGroups: {
+                    where: { active: true },
+                    include: {
+                        options: { where: { active: true } },
                     },
-                    variants: {
-                        where: { active: true },
-                        include: {
-                            recipes: true,
-                            variantOptions: {
-                                include: { variationGroup: true, variationOption: true },
-                            },
+                },
+                variants: {
+                    where: { active: true },
+                    include: {
+                        recipes: true,
+                        variantOptions: {
+                            include: { variationGroup: true, variationOption: true },
                         },
                     },
                 },
-            });
+            },
+        });
+        const itemsMap = new Map(itemsFromDb.map((it) => [it.id, it]));
+        for (const itemDto of data.items) {
+            const quantity = Math.max(1, Math.floor(itemDto.quantity || 1));
+            const item = itemsMap.get(itemDto.itemId);
             if (!item || !item.active) {
                 throw new response_1.AppError("ITEM_NOT_FOUND", `Item ${itemDto.itemId} is inactive or not found`, 404);
             }
@@ -352,6 +356,8 @@ class SalesService {
             itemsCount: result.sale.items.length,
             createdAt: result.sale.createdAt,
         });
+        cache_1.appCache.invalidatePrefix("dashboard:");
+        cache_1.appCache.invalidatePrefix("items:");
         return result;
     }
     async listSales(limit = 50, page = 1, filters) {
@@ -582,6 +588,8 @@ class SalesService {
                     }),
                 },
             });
+            cache_1.appCache.invalidatePrefix("dashboard:");
+            cache_1.appCache.invalidatePrefix("items:");
             return updatedSale;
         });
     }
